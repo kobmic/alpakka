@@ -4,20 +4,31 @@
 package akka.stream.alpakka.s3
 
 import akka.actor.ActorSystem
+import akka.http.scaladsl.model.HttpHeader
+import akka.http.scaladsl.model.headers.RawHeader
 import akka.stream.alpakka.s3.auth.AWSCredentials
 import com.typesafe.config.Config
 
 final case class Proxy(host: String, port: Int, scheme: String)
+
+sealed abstract class ServerSideEncryption(val algorithm: String) {
+  def headers: Seq[HttpHeader] = algorithm match {
+    case "AES256" => RawHeader("x-amz-server-side-encryption", "AES256") :: Nil
+    case _ => throw new IllegalArgumentException("Unsupported encryption algorithm.")
+  }
+}
+case object AES256 extends ServerSideEncryption("AES256")
 
 final class S3Settings(val bufferType: BufferType,
                        val diskBufferPath: String,
                        val proxy: Option[Proxy],
                        val awsCredentials: AWSCredentials,
                        val s3Region: String,
-                       val pathStyleAccess: Boolean) {
+                       val pathStyleAccess: Boolean,
+                       val serverSideEncryption: Option[ServerSideEncryption]) {
 
   override def toString: String =
-    s"S3Settings($bufferType,$diskBufferPath,$proxy,$awsCredentials,$s3Region,$pathStyleAccess)"
+    s"S3Settings($bufferType,$diskBufferPath,$proxy,$awsCredentials,$s3Region,$pathStyleAccess,$serverSideEncryption)"
 }
 
 sealed trait BufferType
@@ -52,6 +63,14 @@ object S3Settings {
     },
     awsCredentials = AWSCredentials(config.getString("aws.access-key-id"), config.getString("aws.secret-access-key")),
     s3Region = config.getString("aws.default-region"),
-    pathStyleAccess = config.getBoolean("path-style-access")
+
+    pathStyleAccess = config.getBoolean("path-style-access"),
+    serverSideEncryption = {
+      if (config.getString("server-side-encryption") == "AES256") {
+        Some(AES256)
+      } else {
+        None
+      }
+    }
   )
 }

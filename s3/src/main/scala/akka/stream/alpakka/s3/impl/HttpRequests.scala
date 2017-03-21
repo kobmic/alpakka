@@ -34,7 +34,11 @@ private[alpakka] object HttpRequests {
       val metaHttpHeaders = metaHeaders.headers.map { header =>
         RawHeader(s"x-amz-meta-${header._1}", header._2)
       }(collection.breakOut): Seq[HttpHeader]
-      metaHttpHeaders :+ RawHeader("x-amz-acl", cannedAcl.value)
+      val encryptionHeaders = conf.serverSideEncryption match {
+        case Some(encryptionAlgorithm) => encryptionAlgorithm.headers
+        case _ => Nil
+      }
+      metaHttpHeaders ++ encryptionHeaders :+ RawHeader("x-amz-acl", cannedAcl.value)
     }
 
     s3Request(s3Location, region, HttpMethods.POST, _.withQuery(Query("uploads")))
