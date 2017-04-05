@@ -11,14 +11,6 @@ import com.typesafe.config.Config
 
 final case class Proxy(host: String, port: Int, scheme: String)
 
-sealed abstract class ServerSideEncryption(val algorithm: String) {
-  def headers: Seq[HttpHeader] = algorithm match {
-    case "AES256" => RawHeader("x-amz-server-side-encryption", "AES256") :: Nil
-    case _ => throw new IllegalArgumentException("Unsupported encryption algorithm.")
-  }
-}
-case object AES256 extends ServerSideEncryption("AES256")
-
 final class S3Settings(val bufferType: BufferType,
                        val diskBufferPath: String,
                        val proxy: Option[Proxy],
@@ -63,14 +55,27 @@ object S3Settings {
     },
     awsCredentials = AWSCredentials(config.getString("aws.access-key-id"), config.getString("aws.secret-access-key")),
     s3Region = config.getString("aws.default-region"),
-
     pathStyleAccess = config.getBoolean("path-style-access"),
     serverSideEncryption = {
-      if (config.getString("server-side-encryption") == "AES256") {
-        Some(AES256)
-      } else {
-        None
+      config.getString("server-side-encryption") match {
+        case "AES256" => Some(AES256)
+        case "aws:kms" if config.hasPath("server-side-encryption-aws-kms-key-id") =>
+          Some(KMS(config.getString("server-side-encryption-aws-kms-key-id")))
+        case _ => None
       }
     }
   )
 }
+
+sealed abstract class ServerSideEncryption(algorithm: String, kmsKeyId: Option[String] = None) {
+  def headers: Seq[HttpHeader] = algorithm match {
+    case "AES256" => RawHeader("x-amz-server-side-encryption", "AES256") :: Nil
+    case "aws:kms" if kmsKeyId.isDefined =>
+      RawHeader("x-amz-server-side-encryption", "aws:kms") ::
+      RawHeader("x-amz-server-side-encryption-aws-kms-key-id", kmsKeyId.get) ::
+      Nil
+    case _ => throw new IllegalArgumentException("Unsupported encryption algorithm.")
+  }
+}
+case object AES256 extends ServerSideEncryption("AES256")
+case class KMS(keyId: String) extends ServerSideEncryption("aws:kms", Some(keyId))

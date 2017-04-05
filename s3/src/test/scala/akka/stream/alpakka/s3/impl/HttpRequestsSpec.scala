@@ -31,6 +31,7 @@ class HttpRequestsSpec extends FlatSpec with Matchers with ScalaFutures {
      |  default-region = "us-east-1"
      |}
      |path-style-access = true
+     |server-side-encryption = ""
    """.stripMargin
 
   val proxyConfig =
@@ -127,7 +128,7 @@ class HttpRequestsSpec extends FlatSpec with Matchers with ScalaFutures {
     req.uri.authority.host.toString shouldEqual "s3-eu-west-1.amazonaws.com"
     req.uri.path.toString shouldEqual "/bucket/image-1024@2x"
   }
-
+  
   it should "support download requests via HTTP when such scheme configured for `proxy`" in {
     implicit val settings = S3Settings(ConfigFactory.parseString(proxyConfig))
 
