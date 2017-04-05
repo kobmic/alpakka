@@ -50,6 +50,7 @@ class HttpRequestsSpec extends FlatSpec with Matchers with ScalaFutures {
       |  default-region = "us-east-1"
       |}
       |path-style-access = false
+      |server-side-encryption = ""
     """.stripMargin
 
   val location = S3Location("bucket", "image-1024@2x")
@@ -128,7 +129,7 @@ class HttpRequestsSpec extends FlatSpec with Matchers with ScalaFutures {
     req.uri.authority.host.toString shouldEqual "s3-eu-west-1.amazonaws.com"
     req.uri.path.toString shouldEqual "/bucket/image-1024@2x"
   }
-  
+
   it should "support download requests via HTTP when such scheme configured for `proxy`" in {
     implicit val settings = S3Settings(ConfigFactory.parseString(proxyConfig))
 
@@ -163,5 +164,72 @@ class HttpRequestsSpec extends FlatSpec with Matchers with ScalaFutures {
       HttpRequests.completeMultipartUploadRequest(multipartUpload, (1, "part") :: Nil, "region")
 
     reqFuture.futureValue.uri.scheme shouldEqual "http"
+  }
+
+  it should "add headers for server side encryption when AES256 configured" in {
+    val testConfig =
+      """
+        |buffer = "memory"
+        |disk-buffer-path = ""
+        |debug-logging = false
+        |proxy {
+        |  host = ""
+        |  port = 8080
+        |}
+        |aws {
+        |  access-key-id = ""
+        |  secret-access-key = ""
+        |  default-region = "us-east-1"
+        |}
+        |path-style-access = false
+        |server-side-encryption = "AES256"
+      """.stripMargin
+
+    implicit val settings = S3Settings(ConfigFactory.parseString(testConfig))
+    val metaHeaders: Map[String, String] = Map()
+
+    val req =
+      HttpRequests.initiateMultipartUploadRequest(location,
+                                                  MediaTypes.`image/jpeg`,
+                                                  CannedAcl.PublicRead,
+                                                  "us-east-2",
+                                                  MetaHeaders(metaHeaders))
+
+    req.headers should contain(RawHeader("x-amz-server-side-encryption", "AES256"))
+  }
+
+  it should "add headers for server side encryption when aws:kms configured" in {
+    val testArn = "arn:aws:kms:my-region:my-account-id:key/my-key-id"
+    val testConfig =
+      s"""
+         |buffer = "memory"
+         |disk-buffer-path = ""
+         |debug-logging = false
+         |proxy {
+         |  host = ""
+         |  port = 8080
+         |}
+         |aws {
+         |  access-key-id = ""
+         |  secret-access-key = ""
+         |  default-region = "us-east-1"
+         |}
+         |path-style-access = false
+         |server-side-encryption = "aws:kms"
+         |server-side-encryption-aws-kms-key-id = "$testArn"
+      """.stripMargin
+
+    implicit val settings = S3Settings(ConfigFactory.parseString(testConfig))
+    val metaHeaders: Map[String, String] = Map()
+
+    val req =
+      HttpRequests.initiateMultipartUploadRequest(location,
+                                                  MediaTypes.`image/jpeg`,
+                                                  CannedAcl.PublicRead,
+                                                  "us-east-2",
+                                                  MetaHeaders(metaHeaders))
+
+    req.headers should contain(RawHeader("x-amz-server-side-encryption", "aws:kms"))
+    req.headers should contain(RawHeader("x-amz-server-side-encryption-aws-kms-key-id", testArn))
   }
 }
